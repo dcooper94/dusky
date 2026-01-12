@@ -67,7 +67,7 @@ INSTALL_SEQUENCE=(
 #    "U | 053_new_github_repo_to_backup.sh"
 #    "U | 054_reconnect_and_push_new_changes_to_github.sh"
 #    "S | 055_grub_optimization.sh"
-    "S | 056_systemdboot_optimization.sh"
+#    "S | 056_systemdboot_optimization.sh"
 #    "S | 057_hosts_files_block.sh"
     "S | 058_gtk_root_symlink.sh"
 #    "S | 059_preload_config.sh"
