@@ -95,7 +95,7 @@ output_path = '~/.config/matugen/generated/wlogout-colors.css'
 input_path = '~/.config/matugen/templates/spotify-colors.ini'
 output_path = '~/.config/matugen/generated/spotify-colors.ini'
 post_hook = '''
-cp $HOME/.config/matugen/generated/spotify-colors.ini $HOME/.config/spicetify/Themes/Comfy/color.ini;
+ln -nfs $HOME/.config/matugen/generated/spotify-colors.ini $HOME/.config/spicetify/Themes/Comfy/color.ini;
 spicetify apply -n;
 hyprctl dispatch sendshortcut "CTRL SHIFT, R, class:^(spotify)$"
 '''
