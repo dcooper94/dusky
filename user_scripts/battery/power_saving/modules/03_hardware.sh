@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-source "$(dirname "$0")/../lib/common.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../lib/common.sh"
 
 echo
-log_step "Module: User Hardware Control"
+log_step "Module 03: User Hardware Control"
 
 # 1. Brightness
 if has_cmd brightnessctl; then
@@ -13,12 +13,13 @@ else
     log_warn "brightnessctl not found."
 fi
 
-# 2. Asus Profile
+# 2. ASUS Profile
 run_external_script "${ASUS_PROFILE_SCRIPT}" "Applying Quiet Profile & KB Lights..."
 
-# 3. Volume Cap (User level via wpctl)
+# 3. Volume Cap
 if has_cmd wpctl; then
-    if raw_output=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null); then
+    raw_output=$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null) || true
+    if [[ -n "${raw_output}" ]]; then
         current_vol=$(awk '{printf "%.0f", $2 * 100}' <<< "${raw_output}")
         
         if is_numeric "${current_vol}" && ((current_vol > VOLUME_CAP)); then
@@ -26,7 +27,7 @@ if has_cmd wpctl; then
                 wpctl set-volume @DEFAULT_AUDIO_SINK@ "${VOLUME_CAP}%"
             log_step "Volume capped at ${VOLUME_CAP}%."
         else
-            log_step "Volume check passed."
+            log_step "Volume at ${current_vol}% (within limit)."
         fi
     fi
 else

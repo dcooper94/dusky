@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-source "$(dirname "$0")/../lib/common.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../lib/common.sh"
 
-# Check if we have sudo privileges
+# Verify sudo privileges
 if ! sudo -n true 2>/dev/null; then
-    log_error "Root privileges missing. Skipping root module."
+    log_error "Root privileges required. Skipping root module."
     exit 1
 fi
 
@@ -16,18 +16,18 @@ if has_cmd rfkill; then
     log_step "Bluetooth blocked."
 fi
 
-# 2. Wi-Fi (Conditional based on Env Var from Master)
+# 2. Wi-Fi (Conditional)
 if [[ "${POWER_SAVER_WIFI:-false}" == "true" ]]; then
     if has_cmd rfkill; then
         spin_exec "Blocking Wi-Fi (Hardware)..." sudo rfkill block wifi
         log_step "Wi-Fi blocked."
     fi
 else
-    log_step "Skipping Wi-Fi block (User request)."
+    log_step "Skipping Wi-Fi block (user request)."
 fi
 
-# 3. TLP
+# 3. TLP - Force battery mode
 if has_cmd tlp; then
-    spin_exec "Activating TLP power saver..." sudo tlp power-saver
-    log_step "TLP power saver activated."
+    spin_exec "Activating TLP battery mode..." sudo tlp bat
+    log_step "TLP battery mode activated."
 fi

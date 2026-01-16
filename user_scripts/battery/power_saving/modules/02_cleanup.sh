@@ -1,22 +1,20 @@
 #!/usr/bin/env bash
-source "$(dirname "$0")/../lib/common.sh"
+source "$(dirname -- "${BASH_SOURCE[0]}")/../lib/common.sh"
 
 echo
-log_step "Module: Cleanup Processes"
+log_step "Module 02: Cleanup Processes"
 
-# 1. Kill resource monitors
-spin_exec "Cleaning up resource monitors..." \
-    bash -c 'pkill -x btop 2>/dev/null; pkill -x nvtop 2>/dev/null; exit 0'
+# Kill resource monitors
+spin_exec "Cleaning up resource monitors..." pkill -x 'btop|nvtop' || true
 
-# 2. Pause media
+# Pause media
 if has_cmd playerctl; then
     run_quiet playerctl -a pause
 fi
 log_step "Resource monitors killed & media paused."
 
-# 3. Warp VPN
+# Warp VPN
 if has_cmd warp-cli; then
-    spin_exec "Disconnecting Warp..." \
-        bash -c 'warp-cli disconnect &>/dev/null || true'
+    spin_exec "Disconnecting Warp..." warp-cli disconnect || true
     log_step "Warp disconnected."
 fi
