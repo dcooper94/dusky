@@ -109,7 +109,7 @@
   },
 
   "custom/theme-toggle": {
-    "format": "󰔎",
+    "format": "",
     "tooltip-format": "Theme Controls\n\n LMB  Dark Mode\n RMB  Light Mode\n MMB  Wallpaper",
     "on-click": "uwsm-app -- ~/user_scripts/theme_matugen/theme_ctl.sh set --mode dark",
     "on-click-right": "uwsm-app -- ~/user_scripts/theme_matugen/theme_ctl.sh set --mode light",
