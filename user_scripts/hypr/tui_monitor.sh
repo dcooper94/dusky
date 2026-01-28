@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #══════════════════════════════════════════════════════════════════════════════
-# HyprMonitorWizard v7.4.1 — Fixed Mode Listing
+# HyprMonitorWizard v7.4.2 — Fix Empty File Writes
 # A robust, strictly typed monitor configuration tool for Hyprland.
 #══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
@@ -8,7 +8,7 @@ set -euo pipefail
 #───────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & PATHS
 #───────────────────────────────────────────────────────────────────────────────
-readonly VERSION="7.4.1"
+readonly VERSION="7.4.2"
 readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/edit_here"
 # Backups stored in volatile /tmp (cleared on reboot)
 readonly BACKUP_DIR="/tmp/hypr-wizard-backups"
@@ -63,8 +63,7 @@ check_dependencies() {
 
     local -a missing=()
     local cmd
-    # Added 'awk' back to checks - it is critical for math logic
-    for cmd in jq hyprctl awk; do
+    for cmd in jq hyprctl awk sed; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
 
@@ -77,7 +76,7 @@ check_dependencies() {
         die "Cannot create required directories. Check permissions for: ${CONFIG_FILE%/*}"
     fi
 
-    # Initialize config if missing
+    # Initialize config if missing (Create empty file if not exists)
     if [[ ! -f "$CONFIG_FILE" ]]; then
         printf '# HyprMonitorWizard Auto-Generated Config\n# Created: %(%Y-%m-%d)T\n' -1 > "$CONFIG_FILE"
         info "Created new configuration file: $CONFIG_FILE"
@@ -96,7 +95,6 @@ validate_resolution() {
 
 validate_position() {
     local input="$1"
-    # Matches: auto, auto-right, auto-up-left, 0x0, -1920x0
     [[ "$input" =~ ^auto(-(left|right|up|down|center))*$ ]] && return 0
     [[ "$input" =~ ^-?[0-9]+x-?[0-9]+$ ]] && return 0
     return 1
@@ -118,7 +116,6 @@ get_active_json()   { hyprctl monitors -j 2>/dev/null || printf '[]\n'; }
 get_misc_option() {
     local option="$1" result
     result=$(hyprctl getoption "misc:$option" -j 2>/dev/null) || { printf '0'; return; }
-    # robust fallback for int/set/0
     printf '%s' "$result" | jq -r '.int // .set // 0'
 }
 
@@ -131,7 +128,8 @@ set_misc_runtime() {
 # BACKUP & PERSISTENCE
 #───────────────────────────────────────────────────────────────────────────────
 create_backup() {
-    [[ ! -s "$CONFIG_FILE" ]] && return 0
+    # Backup even if empty, just to be safe
+    [[ ! -f "$CONFIG_FILE" ]] && return 0
 
     local timestamp
     printf -v timestamp '%(%Y%m%d_%H%M%S)T' -1
@@ -144,7 +142,6 @@ create_backup() {
         sort -rn | tail -n +$((MAX_BACKUPS + 1)) | cut -d' ' -f2-
     )
     
-    # Safe iteration
     if (( ${#old_backups[@]} > 0 )); then
         local f
         for f in "${old_backups[@]}"; do rm -f -- "$f"; done
@@ -158,26 +155,38 @@ make_temp() {
 
 save_monitor_rule() {
     local name="$1" rule="$2"
+    
+    # 1. Ensure Config File Exists
+    [[ ! -f "$CONFIG_FILE" ]] && touch "$CONFIG_FILE"
+    
     create_backup
     make_temp
 
-    # Atomic update strategy:
-    # 1. Escape monitor name for grep (basic regex)
-    # 2. Filter out existing lines for this monitor
-    # 3. Append new rule
+    # 2. Escape name for Regex
     local escaped_name="${name//./\\.}"
     
-    grep -v "^[[:space:]]*monitor[[:space:]]*=[[:space:]]*${escaped_name}[,[:space:]]" \
-        -- "$CONFIG_FILE" > "$TEMP_FILE" 2>/dev/null || :
+    # 3. Use SED instead of GREP. 
+    # Sed returns 0 (success) even if no lines are deleted, preventing 'set -e' crashes on empty files.
+    # Regex matches: Start of line, spaces, "monitor", spaces, "=", spaces, NAME, then a comma OR space OR end of line.
+    sed -E "/^[[:space:]]*monitor[[:space:]]*=[[:space:]]*${escaped_name}(,|[[:space:]]|$)/d" \
+        "$CONFIG_FILE" > "$TEMP_FILE"
 
+    # 4. Append new rule
     printf '%s\n' "$rule" >> "$TEMP_FILE"
-    mv -- "$TEMP_FILE" "$CONFIG_FILE"
-    TEMP_FILE="" # Reset tracking
-    ok "Configuration saved."
+
+    # 5. Move with explicit error check
+    if mv -- "$TEMP_FILE" "$CONFIG_FILE"; then
+        TEMP_FILE="" # Reset tracking so cleanup doesn't delete the success
+        ok "Configuration saved."
+    else
+        die "Failed to write to configuration file: $CONFIG_FILE"
+    fi
 }
 
 save_misc_option() {
     local option="$1" value="$2"
+    [[ ! -f "$CONFIG_FILE" ]] && touch "$CONFIG_FILE"
+    
     create_backup
     make_temp
 
@@ -198,9 +207,12 @@ save_misc_option() {
     }
     ' "$CONFIG_FILE" > "$TEMP_FILE"
 
-    mv -- "$TEMP_FILE" "$CONFIG_FILE"
-    TEMP_FILE=""
-    ok "Global setting saved: misc:$option = $value"
+    if mv -- "$TEMP_FILE" "$CONFIG_FILE"; then
+        TEMP_FILE=""
+        ok "Global setting saved: misc:$option = $value"
+    else
+        die "Failed to save settings."
+    fi
 }
 
 #───────────────────────────────────────────────────────────────────────────────
@@ -450,9 +462,7 @@ configure_monitor() {
         [[ "$low_mode" == "preferred" ]] && low_mode="${modes_raw[-1]}"
     fi
 
-    # ══════════════════════════════════════════════════════════════════════════════
-    # RESTORED: LIST AVAILABLE MODES (From v5.6)
-    # ══════════════════════════════════════════════════════════════════════════════
+    # --- LIST MODES (Restored) ---
     printf '\n%sAvailable modes for %s:%s\n' "$CYN" "$name" "$RST" >&2
     if (( ${#modes_raw[@]} > 0 )); then
         local idx=1
@@ -464,7 +474,6 @@ configure_monitor() {
     else
         printf '  %s(No specific modes reported by Hyprland)%s\n\n' "$DIM" "$RST" >&2
     fi
-    # ══════════════════════════════════════════════════════════════════════════════
 
     menu "Resolution & Refresh ($name):" \
         "Preferred (Auto)" \
