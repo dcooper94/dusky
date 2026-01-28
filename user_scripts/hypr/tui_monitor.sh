@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #══════════════════════════════════════════════════════════════════════════════
-# HyprMonitorWizard v7.4.2 — Fix Empty File Writes
+# HyprMonitorWizard v7.4.3 — Fix Save Logic (Restored v5.6 Robustness)
 # A robust, strictly typed monitor configuration tool for Hyprland.
 #══════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
@@ -8,7 +8,7 @@ set -euo pipefail
 #───────────────────────────────────────────────────────────────────────────────
 # CONSTANTS & PATHS
 #───────────────────────────────────────────────────────────────────────────────
-readonly VERSION="7.4.2"
+readonly VERSION="7.4.3"
 readonly CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/edit_here"
 # Backups stored in volatile /tmp (cleared on reboot)
 readonly BACKUP_DIR="/tmp/hypr-wizard-backups"
@@ -19,14 +19,14 @@ readonly MAX_BACKUPS=20
 readonly RST=$'\e[0m'    RED=$'\e[31m'   GRN=$'\e[32m'   YLW=$'\e[33m'
 readonly BLU=$'\e[34m'   CYN=$'\e[36m'   BLD=$'\e[1m'    DIM=$'\e[2m'
 
-# State tracking for atomic writes
+# State tracking for atomic writes (Only used for misc options now)
 declare TEMP_FILE=""
 
 #───────────────────────────────────────────────────────────────────────────────
 # ERROR HANDLING & CLEANUP
 #───────────────────────────────────────────────────────────────────────────────
 cleanup() {
-    # Clean up temp file if it exists
+    # Clean up global temp file if it exists
     [[ -n "$TEMP_FILE" && -f "$TEMP_FILE" ]] && rm -f -- "$TEMP_FILE"
 }
 trap cleanup EXIT
@@ -63,7 +63,8 @@ check_dependencies() {
 
     local -a missing=()
     local cmd
-    for cmd in jq hyprctl awk sed; do
+    # Added 'awk' back to checks - it is critical for math logic
+    for cmd in jq hyprctl awk; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
 
@@ -76,10 +77,13 @@ check_dependencies() {
         die "Cannot create required directories. Check permissions for: ${CONFIG_FILE%/*}"
     fi
 
-    # Initialize config if missing (Create empty file if not exists)
+    # Initialize config if missing
     if [[ ! -f "$CONFIG_FILE" ]]; then
         printf '# HyprMonitorWizard Auto-Generated Config\n# Created: %(%Y-%m-%d)T\n' -1 > "$CONFIG_FILE"
         info "Created new configuration file: $CONFIG_FILE"
+    else
+        # Ensure it is writable
+        touch "$CONFIG_FILE" || die "Config file is not writable: $CONFIG_FILE"
     fi
 }
 
@@ -95,6 +99,7 @@ validate_resolution() {
 
 validate_position() {
     local input="$1"
+    # Matches: auto, auto-right, auto-up-left, 0x0, -1920x0
     [[ "$input" =~ ^auto(-(left|right|up|down|center))*$ ]] && return 0
     [[ "$input" =~ ^-?[0-9]+x-?[0-9]+$ ]] && return 0
     return 1
@@ -116,6 +121,7 @@ get_active_json()   { hyprctl monitors -j 2>/dev/null || printf '[]\n'; }
 get_misc_option() {
     local option="$1" result
     result=$(hyprctl getoption "misc:$option" -j 2>/dev/null) || { printf '0'; return; }
+    # robust fallback for int/set/0
     printf '%s' "$result" | jq -r '.int // .set // 0'
 }
 
@@ -128,8 +134,7 @@ set_misc_runtime() {
 # BACKUP & PERSISTENCE
 #───────────────────────────────────────────────────────────────────────────────
 create_backup() {
-    # Backup even if empty, just to be safe
-    [[ ! -f "$CONFIG_FILE" ]] && return 0
+    [[ ! -s "$CONFIG_FILE" ]] && return 0
 
     local timestamp
     printf -v timestamp '%(%Y%m%d_%H%M%S)T' -1
@@ -142,6 +147,7 @@ create_backup() {
         sort -rn | tail -n +$((MAX_BACKUPS + 1)) | cut -d' ' -f2-
     )
     
+    # Safe iteration
     if (( ${#old_backups[@]} > 0 )); then
         local f
         for f in "${old_backups[@]}"; do rm -f -- "$f"; done
@@ -153,40 +159,31 @@ make_temp() {
     TEMP_FILE=$(mktemp) || die "Filesystem error: cannot create temp file"
 }
 
+# ══════════════════════════════════════════════════════════════════════════════
+# RESTORED: ROBUST SAVE FUNCTION (From v5.6)
+# ══════════════════════════════════════════════════════════════════════════════
 save_monitor_rule() {
     local name="$1" rule="$2"
-    
-    # 1. Ensure Config File Exists
-    [[ ! -f "$CONFIG_FILE" ]] && touch "$CONFIG_FILE"
-    
     create_backup
-    make_temp
 
-    # 2. Escape name for Regex
+    # Use local temp file directly to avoid global state issues
+    local tmp
+    tmp=$(mktemp) || die "Filesystem error: cannot create temp file"
+
     local escaped_name="${name//./\\.}"
     
-    # 3. Use SED instead of GREP. 
-    # Sed returns 0 (success) even if no lines are deleted, preventing 'set -e' crashes on empty files.
-    # Regex matches: Start of line, spaces, "monitor", spaces, "=", spaces, NAME, then a comma OR space OR end of line.
-    sed -E "/^[[:space:]]*monitor[[:space:]]*=[[:space:]]*${escaped_name}(,|[[:space:]]|$)/d" \
-        "$CONFIG_FILE" > "$TEMP_FILE"
+    # CRITICAL: '|| true' prevents set -e from killing script if grep finds nothing
+    grep -v "^[[:space:]]*monitor[[:space:]]*=[[:space:]]*${escaped_name}[,[:space:]]" \
+        -- "$CONFIG_FILE" > "$tmp" 2>/dev/null || true
 
-    # 4. Append new rule
-    printf '%s\n' "$rule" >> "$TEMP_FILE"
-
-    # 5. Move with explicit error check
-    if mv -- "$TEMP_FILE" "$CONFIG_FILE"; then
-        TEMP_FILE="" # Reset tracking so cleanup doesn't delete the success
-        ok "Configuration saved."
-    else
-        die "Failed to write to configuration file: $CONFIG_FILE"
-    fi
+    printf '%s\n' "$rule" >> "$tmp"
+    mv -- "$tmp" "$CONFIG_FILE"
+    ok "Configuration saved."
 }
+# ══════════════════════════════════════════════════════════════════════════════
 
 save_misc_option() {
     local option="$1" value="$2"
-    [[ ! -f "$CONFIG_FILE" ]] && touch "$CONFIG_FILE"
-    
     create_backup
     make_temp
 
@@ -207,12 +204,9 @@ save_misc_option() {
     }
     ' "$CONFIG_FILE" > "$TEMP_FILE"
 
-    if mv -- "$TEMP_FILE" "$CONFIG_FILE"; then
-        TEMP_FILE=""
-        ok "Global setting saved: misc:$option = $value"
-    else
-        die "Failed to save settings."
-    fi
+    mv -- "$TEMP_FILE" "$CONFIG_FILE"
+    TEMP_FILE=""
+    ok "Global setting saved: misc:$option = $value"
 }
 
 #───────────────────────────────────────────────────────────────────────────────
