@@ -1,6 +1,10 @@
 [config]
 # ...
 
+[templates.master_dump]
+input_path = "~/.config/matugen/templates/master-dump.jsonl"
+output_path = "~/.config/matugen/generated/master-dump.jsonl"
+
 # -----------------------------------------------------------------------------
 # GTK & Qt
 # -----------------------------------------------------------------------------
@@ -63,7 +67,7 @@ fi
 [templates.swayosd]
 input_path  = '~/.config/matugen/templates/swayosd-colors.css'
 output_path = '~/.config/matugen/generated/swayosd-colors.css'
-post_hook   = '~/user_scripts/swayosd/restart_swayosd.sh || true'
+# post_hook   = '~/user_scripts/swayosd/restart_swayosd.sh || true'
 
 [templates.wlogout]
 input_path  = '~/.config/matugen/templates/colors.css'
@@ -85,10 +89,14 @@ ln -nfs $HOME/.config/matugen/generated/kitty-colors.conf $HOME/.config/kitty/ki
 pkill -SIGUSR1 kitty || true
 '''
 
-[templates.alacritty]
-input_path  = '~/.config/matugen/templates/alacritty.toml'
-output_path = '~/.config/matugen/generated/alacritty-colors.toml'
-post_hook   = 'ln -nfs $HOME/.config/matugen/generated/alacritty-colors.toml $HOME/.config/alacritty/alacritty-colors.toml'
+[templates.opencode]
+input_path = '~/.config/matugen/templates/opencode-colors.json'
+output_path = '~/.config/opencode/generated/opencode.json'
+
+# [templates.alacritty]
+# input_path  = '~/.config/matugen/templates/alacritty.toml'
+# output_path = '~/.config/matugen/generated/alacritty-colors.toml'
+# post_hook   = 'ln -nfs $HOME/.config/matugen/generated/alacritty-colors.toml $HOME/.config/alacritty/alacritty-colors.toml'
 
 [templates.neovim]
 input_path  = '~/.config/matugen/templates/neovim/template.lua'
@@ -135,20 +143,38 @@ mkdir -p $HOME/Documents/pensive/.obsidian/snippets;
 ln -nfs $HOME/.config/matugen/generated/obsidian-theme.css $HOME/Documents/pensive/.obsidian/snippets/matugen-theme.css
 '''
 
+[templates.vesktop]
+input_path  = '~/.config/matugen/templates/midnight-discord.css'
+output_path = '~/.config/matugen/generated/midnight-discord.css'
+post_hook   = '''
+mkdir -p $HOME/~/.config/vesktop/themes/;
+ln -nfs $HOME/.config/matugen/generated/midnight-discord.css $HOME/.config/vesktop/themes/midnight-discord.css
+'''
+
+[templates.beeper]
+input_path  = '~/.config/matugen/templates/beeper.css'
+output_path = '~/.config/matugen/generated/beeper.css'
+post_hook   = '''
+if command -v beeper &> /dev/null; then
+    ln -nfs $HOME/.config/matugen/generated/beeper.css $HOME/.config/BeeperTexts/custom.css;
+    hyprctl dispatch sendshortcut "CTRL SHIFT ALT, R, class:^(BeeperTexts)$" || true;
+fi
+'''
+
 # -----------------------------------------------------------------------------
 # Media & System Monitor
 # -----------------------------------------------------------------------------
 
-[templates.spicetify]
-input_path  = '~/.config/matugen/templates/spotify-colors.ini'
-output_path = '~/.config/matugen/generated/spotify-colors.ini'
-post_hook   = '''
-if command -v spicetify &> /dev/null && [ -d "$HOME/.config/spicetify/Themes/Comfy" ]; then
-    ln -nfs $HOME/.config/matugen/generated/spotify-colors.ini $HOME/.config/spicetify/Themes/Comfy/color.ini;
-    spicetify apply -n;
-    hyprctl dispatch sendshortcut "CTRL SHIFT, R, class:^(spotify)$" || true;
-fi
-'''
+# [templates.spicetify]
+# input_path  = '~/.config/matugen/templates/spotify-colors.ini'
+# output_path = '~/.config/matugen/generated/spotify-colors.ini'
+# post_hook   = '''
+# if command -v spicetify &> /dev/null && [ -d "$HOME/.config/spicetify/Themes/Comfy" ]; then
+#     ln -nfs $HOME/.config/matugen/generated/spotify-colors.ini $HOME/.config/spicetify/Themes/Comfy/color.ini;
+#     spicetify apply -n;
+#     hyprctl dispatch sendshortcut "CTRL SHIFT, R, class:^(spotify)$" || true;
+# fi
+# '''
 
 [templates.cava]
 input_path  = '~/.config/matugen/templates/cava-colors.ini'
